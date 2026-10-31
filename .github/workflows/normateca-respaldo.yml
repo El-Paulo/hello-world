@@ -1,0 +1,74 @@
+name: Respaldo normativo OncoTech 2026
+on:
+  push:
+    branches: [respaldo-normateca-2026]
+jobs:
+  descargar:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Instalar bibliotecas
+        run: python -m pip install requests beautifulsoup4 reportlab pypdf
+      - name: Descargar y validar 23 documentos
+        shell: bash
+        run: |
+          python - <<'PY'
+          import concurrent.futures, os, json, time, urllib.request, zipfile
+          from pathlib import Path
+          from xml.sax.saxutils import escape
+          from bs4 import BeautifulSoup
+          from reportlab.platypus import SimpleDocTemplate, Paragraph
+          from reportlab.lib.pagesizes import letter
+          from reportlab.lib.styles import ParagraphStyle
+          from reportlab.lib.enums import TA_JUSTIFY,TA_CENTER
+          from pypdf import PdfReader
+          D=[["Ley_General_de_Salud_vigente.pdf","https://www.diputados.gob.mx/LeyesBiblio/pdf/LGS.pdf"],["Reglamento_LGS_Prestacion_Servicios_Atencion_Medica.pdf","https://www.diputados.gob.mx/LeyesBiblio/regley/Reg_LGS_MPSAM_170718.pdf"],["NOM-016-SSA3-2012.pdf","https://www.gob.mx/cms/uploads/attachment/file/512104/NOM-016-SSA3-2012.pdf"],["NOM-022-SSA3-2012.pdf","https://www.gob.mx/cms/uploads/attachment/file/512070/NOM-022-SSA3-2012.pdf"],["NOM-004-SSA3-2012.pdf","https://www.gob.mx/cms/uploads/attachment/file/35875/NOM-004-SSA3-2012.pdf"],["NOM-030-SSA3-2013.pdf","https://www.gob.mx/cms/uploads/attachment/file/35897/NOM-030-SSA3-2013.pdf"],["NOM-045-SSA2-2005.pdf","https://sidof.segob.gob.mx/notas/docFuente/5120943"],["NOM-220-SSA1-2016.pdf","https://www.gob.mx/cms/uploads/attachment/file/287258/NOM-220-SSA1-2016.pdf"],["NOM-240-SSA1-2012.pdf","https://www.gob.mx/cms/uploads/attachment/file/512084/NOM-240-SSA1-2012.pdf"],["NOM-087-SEMARNAT-SSA1-2002.pdf","https://www.imss.gob.mx/sites/all/statics/profesionalesSalud/investigacionSalud/cbis/nom-087-semarnat-ssa1-2002.pdf"],["NOM-052-SEMARNAT-2005.pdf","https://www.profepa.gob.mx/innovaportal/file/1291/1/nom-052-semarnat-2005.pdf"],["NOM-017-STPS-2024.pdf","https://platiica.economia.gob.mx/wp-content/uploads/sites/2/PDF_Normas_Publicas/NOM-017-STPS-2024.pdf"],["NOM-018-STPS-2015.pdf","https://platiica.economia.gob.mx/wp-content/uploads/sites/2/PDF_Normas_Publicas/NOM-018-STPS-2015.pdf"],["NOM-005-STPS-1998.pdf","https://www.ucol.mx/content/cms/13/file/NOM/NOM-005-STPS-1998.pdf"],["Reglamento_de_Insumos_para_la_Salud_vigente_2026.pdf","https://www.gob.mx/cms/uploads/attachment/file/1100953/Reglamento_de_Insumos_para_la_Salud.pdf"],["NOM-249-SSA1-2010_original.pdf","https://platiica.economia.gob.mx/normalizacion/wp-content/uploads/sites/2/PDF_Normas_Publicas/249ssa1011.pdf"],["Modificacion_NOM-249-SSA1-2010_09ago2023.pdf","https://www.imss.gob.mx/sites/all/statics/pdf/marconormativo/NormasOficiales/NOM-249-SSA1-2010.pdf"],["Reglamento_LGS_Investigacion_para_la_Salud.pdf","https://www.diputados.gob.mx/LeyesBiblio/regley/Reg_LGS_MIS.pdf"],["NOM-012-SSA3-2012.pdf","https://www.imss.gob.mx/sites/all/statics/profesionalesSalud/investigacionSalud/normativaNac/4_NOM-012-SSA-3-2012.pdf"],["Ley_Federal_Proteccion_Datos_Personales_Particulares_vigente.pdf","https://www.diputados.gob.mx/LeyesBiblio/pdf/LFPDPPP.pdf"],["Decreto_reforma_LGS_15ene2026.pdf","https://dof.gob.mx/2026/PRESREP/PRESREP_150126_02.pdf"],["Decreto_reforma_Reglamento_Insumos_24abr2026.pdf","https://sidof.segob.gob.mx/notas/docFuente/5785957"],["Acuerdo_COFEPRIS_Baja_California_Sur_09may2025.pdf","https://www.gob.mx/cms/uploads/attachment/file/995915/BAJA_SUR-DOF-09-MAYO-2025.pdf"]]
+          root=Path('normas'); root.mkdir(exist_ok=True)
+          style=ParagraphStyle('body',fontName='Helvetica',fontSize=9.2,leading=12.8,alignment=TA_JUSTIFY,spaceAfter=4)
+          title=ParagraphStyle('heading',parent=style,fontName='Helvetica-Bold',fontSize=13,leading=17,alignment=TA_CENTER,spaceAfter=10)
+          def normalize(t):
+           t=' '.join(t.split());t=''.join(c if ord(c)<256 else {'—':'-','–':'-','‘':"'",'’':"'",'“':'"','”':'"','•':'*'}.get(c,' ') for c in t)
+           return escape(t)
+          def download(row):
+           name,url=row
+           for attempt in range(3):
+            try:
+             req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0','Accept':'application/pdf,text/html,*/*'})
+             with urllib.request.urlopen(req,timeout=60) as response: data=response.read(40000000)
+             path=root/name
+             if '/notas/docFuente/' in url:
+              soup=BeautifulSoup(data,'html.parser');body=soup.body
+              if not body or not body.div: raise ValueError('HTML incompleto')
+              story=[]
+              for el in body.div.find_all(recursive=False):
+               txt=el.get_text(' ',strip=True)
+               if txt: story.append(Paragraph(normalize(txt),title if el.name=='h1' else style))
+              SimpleDocTemplate(str(path),pagesize=letter,leftMargin=45,rightMargin=45,topMargin=48,bottomMargin=48).build(story)
+             else:
+              if not data.startswith(b'%PDF-'): raise ValueError('Respuesta distinta de PDF')
+              path.write_bytes(data)
+             reader=PdfReader(str(path),strict=False)
+             if len(reader.pages)==0: raise ValueError('PDF sin paginas')
+             print('OK',name,len(reader.pages),path.stat().st_size,flush=True)
+             return name
+            except Exception as e:
+             print('ERROR',attempt,name,str(e),flush=True)
+             time.sleep(3*(attempt+1))
+           raise RuntimeError('No se pudo descargar: '+name)
+          with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool: result=list(pool.map(download,D))
+          assert len(result)==23
+          with zipfile.ZipFile('Normateca_OncoTech_2026_23_PDF.zip','w',zipfile.ZIP_DEFLATED,compresslevel=6) as z:
+           for f in sorted(root.glob('*.pdf')): z.write(f,f.name)
+          with zipfile.ZipFile('Normateca_OncoTech_2026_23_PDF.zip') as z:
+           assert len(z.namelist())==23 and z.testzip() is None
+          print('ARCHIVO VALIDADO',Path('Normateca_OncoTech_2026_23_PDF.zip').stat().st_size,flush=True)
+          
+          PY
+      - name: Publicar ZIP validado
+        uses: actions/upload-artifact@v4
+        with:
+          name: Normateca_OncoTech_2026_23_PDF
+          path: Normateca_OncoTech_2026_23_PDF.zip
+          if-no-files-found: error
+          retention-days: 14
